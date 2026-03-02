@@ -1,6 +1,6 @@
 const express = require('express');
 const app = express();
-const rateLimiter = require('express-rate-limit');
+const rateLimit = require('express-rate-limit');
 const compression = require('compression');
 const path = require('path');
 
@@ -8,30 +8,25 @@ const path = require('path');
    GLOBAL MIDDLEWARE
 ======================== */
 
-app.use(
-  compression({
-    level: 5,
-    threshold: 0,
-  })
-);
+app.use(compression());
 
-app.set('view engine', 'ejs');
 app.set('trust proxy', 1);
+app.set('view engine', 'ejs');
 
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
 app.use(
-  rateLimiter({
+  rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 500, // naikin dulu biar ga trigger reconnect
+    max: 1000, // biar ga gampang 429
+    standardHeaders: true,
+    legacyHeaders: false,
   })
 );
 
 app.use((req, res, next) => {
-  console.log(
-    `[${new Date().toISOString()}] ${req.method} ${req.url}`
-  );
+  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
   next();
 });
 
@@ -40,31 +35,17 @@ app.use((req, res, next) => {
 ======================== */
 
 /**
- * LOGIN DASHBOARD
+ * 1️⃣ LOGIN DASHBOARD (GET)
+ * Harus return HTML
  */
-app.post('/player/login/dashboard', (req, res) => {
-  try {
-    const { growId, password } = req.body;
-
-    if (!growId || !password) {
-      return res.status(400).json({
-        status: 'error',
-        message: 'Missing growId or password',
-      });
-    }
-
-    return res.redirect(302, '/player/growid/login/validate');
-  } catch (err) {
-    console.error('Dashboard Error:', err);
-    return res.status(500).json({
-      status: 'error',
-      message: 'Internal Server Error',
-    });
-  }
+app.get('/player/login/dashboard', (req, res) => {
+  return res.sendFile(
+    path.join(__dirname, 'public', 'html', 'dashboard.html')
+  );
 });
 
 /**
- * VALIDATE LOGIN
+ * 2️⃣ VALIDATE LOGIN (POST)
  */
 app.post('/player/growid/login/validate', (req, res) => {
   try {
@@ -73,15 +54,14 @@ app.post('/player/growid/login/validate', (req, res) => {
     if (!_token || !growId || !password) {
       return res.status(400).json({
         status: 'error',
-        message: 'Invalid request body',
+        message: 'Missing required fields',
       });
     }
 
-    const token = Buffer.from(
-      `_token=${_token}&growId=${growId}&password=${password}`
-    ).toString('base64');
+    const tokenRaw = `_token=${_token}&growId=${growId}&password=${password}`;
+    const token = Buffer.from(tokenRaw).toString('base64');
 
-    return res.json({
+    return res.status(200).json({
       status: 'success',
       message: 'Account Validated.',
       token,
@@ -98,7 +78,7 @@ app.post('/player/growid/login/validate', (req, res) => {
 });
 
 /**
- * CHECK TOKEN
+ * 3️⃣ CHECK TOKEN (POST)
  */
 app.post('/player/growid/checkToken', (req, res) => {
   try {
@@ -111,19 +91,19 @@ app.post('/player/growid/checkToken', (req, res) => {
       });
     }
 
-    const decoded = Buffer.from(refreshToken, 'base64').toString('utf-8');
+    const decoded = Buffer.from(refreshToken, 'base64').toString('utf8');
 
-    const updatedToken = Buffer.from(
-      decoded.replace(
-        /(_token=)[^&]*/,
-        `$1${Buffer.from(clientData).toString('base64')}`
-      )
-    ).toString('base64');
+    const updated = decoded.replace(
+      /(_token=)[^&]*/,
+      `$1${Buffer.from(clientData).toString('base64')}`
+    );
 
-    return res.json({
+    const newToken = Buffer.from(updated).toString('base64');
+
+    return res.status(200).json({
       status: 'success',
       message: 'Token is valid.',
-      token: updatedToken,
+      token: newToken,
       url: '',
       accountType: 'growtopia',
     });
@@ -137,7 +117,7 @@ app.post('/player/growid/checkToken', (req, res) => {
 });
 
 /* ========================
-   STATIC & DEFAULT
+   DEFAULT ROUTES
 ======================== */
 
 app.get('/favicon.ico', (req, res) => {
@@ -145,11 +125,22 @@ app.get('/favicon.ico', (req, res) => {
 });
 
 app.get('/', (req, res) => {
-  res.send('Server Running');
+  res.status(200).send('Growtopia Login Backend Running');
 });
 
 /* ========================
-   GLOBAL ERROR HANDLER
+   404 HANDLER
+======================== */
+
+app.use((req, res) => {
+  res.status(404).json({
+    status: 'error',
+    message: 'Route Not Found',
+  });
+});
+
+/* ========================
+   ERROR HANDLER
 ======================== */
 
 app.use((err, req, res, next) => {
@@ -164,6 +155,8 @@ app.use((err, req, res, next) => {
    START SERVER
 ======================== */
 
-app.listen(5000, () => {
-  console.log('Listening on port 5000');
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
