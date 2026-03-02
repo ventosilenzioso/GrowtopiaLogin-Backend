@@ -38,10 +38,12 @@ app.use((req, res, next) => {
  * 1️⃣ LOGIN DASHBOARD (GET)
  * Harus return HTML
  */
-app.get('/player/login/dashboard', (req, res) => {
-  return res.sendFile(
-    path.join(__dirname, 'public', 'html', 'dashboard.html')
-  );
+app.all('/player/login/dashboard', (req, res) => {
+  console.log('valKey:', req.query.valKey || 'none');
+
+  return res.render('dashboard', {
+    token: require('crypto').randomBytes(16).toString('hex')
+  });
 });
 
 /**
